@@ -1,0 +1,278 @@
+---
+title: "new_mod_desolve"
+format: html
+editor: visual
+---
+
+```{r setup}
+library(deSolve)
+library(patchwork)
+library(tidyr)
+library(ggplot2)
+```
+
+$$
+\begin{align*}
+\frac{dH_i}{dt} &= r_iH_i(1-\frac{H_i}{K_i})- 
+(1-\psi_i\min ( 1,\frac{H_i}{Ki}) ) \frac{a_i\alpha_i}{1+a_ih\alpha_i} 
+- \sum_j(\delta_{j,i}H_j)  \\
+\frac{dP}{dt} 
+  &= r_PP(1-\frac{P}{K_p})+ 
+  \sum_i( \beta_i
+  \frac{a_i\alpha_i}{1+a_ih\alpha_i} )
+  - \sum_i(\delta_{i,P}H_i)\\
+\frac{d\alpha_i}{dt} &=  c_i\gamma P - \min(0,\frac{\frac{dP}{dt}}{P})\alpha_i\\
+\text{Uniform: } &c_i = \frac{1}n  \\
+\text{Body Mass: } &c_i = \frac{H_i}{\sum_{j=1}^{n} H_j} \\
+\\ \text{
+PC: } &c_i =  \frac{  \beta_i\frac{a_i(\alpha_i + c_i\gamma P)}
+             {1+a_ih_i(\alpha_i + c_i\gamma P)} - \beta_i\frac{a_i\alpha_i}{1+a_ih_i\alpha_i}
+ }{\sum_j^n \beta_j\frac{a_j(\alpha_j + c_j\gamma P)}{1+a_jh_j(\alpha_j + c_j\gamma P} - \beta_j\frac{a_j\alpha_j}{1+a_jh_j\alpha_j}} 
+\end{align*}
+$$
+
+```{r mod}
+
+model <- function(time, state, new_h, parameters) {
+  with(as.list(c(state, parameters)), {
+  
+    #forb
+    d_HF <-  r_HF*HF*(1-(HF/K_HF)) - 
+      ((1-psi_F*(HF/K_HF)) * (a_F*alpha_F)/(1+a_F*h_F*alpha_F)) -
+      delta_LF*HF*HL - delta_GF*HG*HF 
+    
+    
+    
+    #legume
+    d_HL <-  r_HL*HL*(1-(HL/K_HL)) -
+      ((1-psi_L*(HL/K_HL)) * (a_L*alpha_L)/(1+a_L*h_L*alpha_L)) -
+      delta_FL*HF*HL -  delta_GL*HG*HL 
+    
+    #grass
+    d_HG <-  r_HG*HG*(1-(HG/K_HG)) -
+      ((1-psi_G*(HG/K_HG)) * (a_G*alpha_G)/(1+a_G*h_G*alpha_G)) -
+      delta_FG*HF*HG - delta_LG*HG*HL
+    
+    #parasite
+    d_P <-  r_P*P*(1- (P/K_P))  + 
+      betaF*((a_F*alpha_F^2)/(1+a_F*h_F*alpha_F)) + 
+      betaL*((a_L*alpha_L)/(1+a_L*h_L*alpha_L)) +
+      betaG*((a_G*alpha_G)/(1+a_G*h_G*alpha_G)) -
+      (delta_FP*HF + delta_GP*HG + delta_LP*HL)
+    
+    #will give new alpha (haustoria) depending on value of "new_h"
+    alpha_val <- switch(
+      new_h,
+      
+      "BM" = {
+        out <- c(HF, HL, HG)/sum(HF,HL,HG, na.rm = T)
+        ifelse(is.na(out), 0, out)
+      }
+      , #proportion of available biomass 
+      
+      "Unif" = {
+        out <- c(1/3,1/3,1/3)
+        out
+      },
+      
+      "PC" = { #parasite choice, parasite gives 80% new haustoria to the host the gives it the best return on investment 
+        
+        #RIGHT NOW DOSE NOT TAKE INTO ACCOUNT HOST MORTALITY FROM ADITIONAL HAUSTORIA  
+        vec <- c(
+          
+          ifelse(HF>0,
+                 
+                betaF* ( (a_F*(alpha_F+gamma*P))/(1+a_F*h_F*(alpha_F+gamma*P)) - 
+                    (a_F*alpha_F)/(1+a_F*h_F*alpha_F)), 0),
+          
+          
+          ifelse(HL>0, 
+                 betaL* ((a_L*(alpha_L+gamma*P))/(1+a_L*h_L*(alpha_L+gamma*P)) -
+                    (a_L*alpha_L)/(1+a_L*h_L*alpha_L)) , 0 ),
+          
+          
+          ifelse(HG>0,   
+                 
+                 betaG* ((a_G*(alpha_G+gamma*P))/(1+a_G*h_G*(alpha_G+gamma*P)) - 
+                    (a_G*alpha_G)/(1+a_G*h_G*alpha_G)), 0)
+        )
+        
+        out <- vec/sum(vec)
+        out
+      }
+    ) 
+    
+    
+    d_alpha_F <- gamma*alpha_val[1]*P 
+
+    d_alpha_L <- gamma*alpha_val[2]*P 
+
+    d_alpha_G <- gamma*alpha_val[3]*P 
+  
+    
+    #updating y
+    
+    return(list(c(
+      d_HF ,
+      d_HL ,
+      d_HG ,
+      d_P ,
+      
+      d_alpha_F ,
+      d_alpha_L ,
+      d_alpha_G
+    )))
+
+  })
+}
+
+```
+
+```{r ploting fun }
+
+plotting <- function(results, lab, time_steps){
+  plot_df <- data.frame(
+    time = time_steps,
+    results
+  )
+  
+  long <- pivot_longer(
+    plot_df,
+    cols = c(HF, HL, HG, P),
+    names_to = "Variable",
+    values_to = "Value"
+  )
+  
+  plot <- ggplot(long,
+                 aes(x = time, y = Value, colour = Variable)) +
+    geom_line(linewidth = 1.2) +
+    labs(
+      title = paste0("Host and Parasite - ", lab),
+      x = "Time",
+      y = "Biomass"
+    ) +
+    theme_classic() +
+    scale_color_manual(values = c(
+      HF = "#FF8000",
+      HL = "#2C85B2",
+      HG = "#6B990F",
+      P  = "red"
+    ))
+  
+  
+  alpha_long <- pivot_longer(
+    plot_df,
+    cols = c(alpha_F, alpha_L, alpha_G),
+    names_to = "Variable",
+    values_to = "Value"
+  )
+  
+  alpha_plot <- ggplot(alpha_long,
+                       aes(x = time, y = Value, colour = Variable)) +
+    geom_line(linewidth = 1.2) +
+    labs(
+      title = "Haustoria ",
+      x = "Time",
+      y = "#"
+    ) +
+    theme_classic() +
+    scale_color_manual(values = c(
+      alpha_F = "#FFBF80",
+      alpha_L = "#7EC3E5",
+      alpha_G = "#A3CC51"
+    ))
+  
+  plot / alpha_plot
+  
+}
+
+```
+
+```{r params}
+
+#inital population
+init_P_HD <- c(HF = 50,  HL =50, HG = 50, P = 10, 
+               alpha_F = 0, alpha_L =0, alpha_G =0) 
+
+#timeing
+time_steps <- seq(0, 100, by = 1) 
+
+#parameters
+params <- params <- c(
+  r_HF = 0.40, K_HF = 50, 
+  r_HL = 0.5, K_HL = 50, 
+  r_HG = 0.6, K_HG = 65, 
+  
+  #comp
+  delta_LF = 0.0008,
+  delta_FL = 0.0006,
+  
+  delta_GF = 0.0004,
+  delta_GL = 0.0004,
+  
+  delta_FG = 0.0009,
+  delta_LG = 0.0008,
+  
+  delta_FP = 0.0009,
+  delta_LP = 0.0008,
+  delta_GP = 0.0009,
+
+  
+  #parasite resistance
+  
+  psi_F = 0.5,
+  psi_L = 0.4,
+  psi_G = 0.2,
+  
+
+  #parasite stuff 
+  betaG = 0.1,
+  betaF = 0.2,
+  betaL = 0.3,
+  r_P = 0.3,
+  K_P = 10,
+  gamma = 1,
+  l_P = 0.06,
+  
+  #handling time
+  h_F = 0.5,
+  h_G = 0.5,
+  h_L = 0.5,
+  
+  
+  a_F = 0.005,
+  a_G = 0.09,
+  a_L = 0.005
+  
+)
+
+
+```
+
+```{r results}
+results_Unif <- ode(y = init_P_HD, 
+               times = time_steps, 
+               func = model, 
+               new_h = "Unif",
+               parms = params)
+
+plotting(results_Unif, "Unif", time_steps)
+
+
+results_BM <- ode(y = init_P_HD, 
+              times = time_steps, 
+              func = model, 
+              new_h = "BM",
+              parms = params)
+
+plotting(results_BM, "BM", time_steps)
+
+results_PC<- ode(y = init_P_HD, 
+              times = time_steps, 
+              func = model, 
+              new_h = "PC",
+              parms = params)
+
+plotting(results_PC, "PC", 1:length((results_PC)[,1]))
+
+```
