@@ -10,17 +10,18 @@ library(bslib)
 model <- function(time, state, parms, host_type) {
   with(as.list(c(state, parms)), {
     
-    # host parameters
+    # host and host-specific parameters
     r_h <- parms[[paste0("r_h_", host_type)]]
     K_h <- parms[[paste0("K_h_", host_type)]]
     delta_hp <- parms[[paste0("delta_hp_", host_type)]]
     delta_ph <- parms[[paste0("delta_ph_", host_type)]]
     alpha <- parms[[paste0("alpha_", host_type)]]
+    beta <- parms[[paste0("beta_", host_type)]]
     
     # rates & functional responses
     frac <- (Z / H) / (c_impact + (Z / H))
     
-    # ODEs (updated to match formulation with beta)
+    # ODEs
     d_H <- (r_h - r_h * beta * frac) * H * (1 - (H + delta_hp * P) / K_h)
     d_P <- r_p * P * (1 - (P + delta_ph * H) / K_p) + alpha * beta * frac
     d_Z <- gamma * P - mu * Z
@@ -84,6 +85,14 @@ ui <- page_sidebar(
                                   min = 0.05, max = 1.0, value = 0.50, 
                                   step = 0.05)
       ),
+      accordion_panel("host response/defense/efficiency to parasite attachment (beta)",
+                      sliderInput("beta_forb", "forb response (beta):", 
+                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05),
+                      sliderInput("beta_grass", "grass response (beta):", 
+                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05),
+                      sliderInput("beta_legume", "legume response (beta):", 
+                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05)
+      ),
       accordion_panel("competition (delta_hp & delta_ph)",
                       sliderInput("delta_hp_forb", 
                                   "forb on parasite (delta_hp):", 
@@ -121,9 +130,6 @@ ui <- page_sidebar(
                       sliderInput("c_impact", "host growth impact (c_impact):",
                                   min = 0, max = 2, value = 1, 
                                   step = 0.01),
-                      sliderInput("beta", "resource conversion efficiency (beta):",
-                                  min = 0.01, max = 2.0, value = 1.0,
-                                  step = 0.05),
                       sliderInput("mu", "haustoria death rate (mu):", 
                                   min = 0.01, max = 0.5, value = 0.1, 
                                   step = 0.01)
@@ -148,8 +154,8 @@ ui <- page_sidebar(
               div(style = "padding: 15px;",
                   h3("Model Formulation"),
                   withMathJax(
-                    p("$$\\frac{dH}{dt} = \\left(r_h - r_h \\beta \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)\\right) H \\left(1 - \\frac{H + \\delta_{hp} P}{K_h}\\right)$$"),
-                    p("$$\\frac{dP}{dt} = r_p P \\left(1 - \\frac{P + \\delta_{ph} H}{K_p}\\right) + \\alpha \\beta \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)$$"),
+                    p("$$\\frac{dH}{dt} = \\left(r_H - r_H \\beta_H \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)\\right) H \\left(1 - \\frac{H + \\delta_{HP} P}{K_H}\\right)$$"),
+                    p("$$\\frac{dP}{dt} = r_P P \\left(1 - \\frac{P + \\delta_{PH} H}{K_P}\\right) + \\alpha \\beta_H \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)$$"),
                     p("$$\\frac{dZ}{dt} = \\gamma P - \\mu Z$$")
                   ),
                   hr(),
@@ -203,18 +209,18 @@ server <- function(input, output, session) {
   parameters <- reactive({
     list(
       r_p = input$r_p, K_p = input$K_p, gamma = input$gamma,
-      c_impact = input$c_impact, beta = input$beta, mu = input$mu,
+      c_impact = input$c_impact, mu = input$mu,
       
       r_h_forb = input$r_h_forb, K_h_forb = input$K_h_forb, 
-      alpha_forb = input$alpha_forb,
+      alpha_forb = input$alpha_forb, beta_forb = input$beta_forb,
       delta_hp_forb = input$delta_hp_forb, delta_ph_forb = input$delta_ph_forb,
       
       r_h_grass = input$r_h_grass, K_h_grass = input$K_h_grass, 
-      alpha_grass = input$alpha_grass,
+      alpha_grass = input$alpha_grass, beta_grass = input$beta_grass,
       delta_hp_grass = input$delta_hp_grass, delta_ph_grass = input$delta_ph_grass,
       
       r_h_legume = input$r_h_legume, K_h_legume = input$K_h_legume, 
-      alpha_legume = input$alpha_legume,
+      alpha_legume = input$alpha_legume, beta_legume = input$beta_legume,
       delta_hp_legume = input$delta_hp_legume, delta_ph_legume = input$delta_ph_legume)
   })
   
@@ -265,14 +271,14 @@ server <- function(input, output, session) {
   # parameter metadata table
   output$param_table <- renderTable({
     data.frame(
-      Symbol = c("H", "P", "Z", "r_h", "K_h", "r_p", "K_p", "c_impact", 
-                 "beta", "alpha", 
-                 "gamma", "mu", "delta_hp / delta_ph"),
+      Symbol = c("H", "P", "Z", "r_H", "K_H", "r_P", "K_P", "c_impact", 
+                 "beta_H", "alpha", 
+                 "gamma", "mu", "delta_HP / delta_PH"),
       Parameter = c(
         "Host Biomass", "Parasite Biomass", "Haustoria Density", 
         "Host Growth Rate", "Host Carrying Capacity", "Parasite Growth Rate", 
         "Parasite Carrying Capacity", "Parasite Impact Coefficient", 
-        "Resource Conversion Efficiency", "Attachment Rate Constant", 
+        "Host response/defense/efficiency to parasite attachment", "Attachment Rate Constant", 
         "Haustoria Creation Rate", "Haustoria Loss Rate", 
         "Competition Coefficients"
       ),
@@ -285,7 +291,7 @@ server <- function(input, output, session) {
         "Baseline intrinsic growth rate of parasite from photosynthesis",
         "Maximum parasite biomass sustainable by baseline structures",
         "Per-haustorium rate constant altering host growth efficiency reduction",
-        "Maximum biomass conversion rate from stolen host resources",
+        "TBD but something related to host response/defense/efficiency to parasite attachment",
         "Baseline probability coefficient of haustorium attachment",
         "Production rate of new haustoria per unit of parasite biomass",
         "Combined rate of haustorial senescence, decay, or host ejection",
