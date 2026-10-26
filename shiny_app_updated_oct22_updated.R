@@ -22,8 +22,8 @@ model <- function(time, state, parms, host_type) {
     frac <- (Z / H) / (c_impact + (Z / H))
     
     # ODEs
-    d_H <- (r_h - r_h * beta * frac) * H * (1 - (H + delta_hp * P) / K_h)
-    d_P <- r_p * P * (1 - (P + delta_ph * H) / K_p) + alpha * beta * frac
+    d_H <- (r_h - r_h *(1 - beta) * frac) * H * (1 - (H + delta_hp * P) / K_h)
+    d_P <- r_p * P * (1 - (P + delta_ph * H) / K_p) + alpha * (1- beta) * frac
     d_Z <- gamma * P - mu * Z
     
     # prevent negative values
@@ -44,15 +44,15 @@ ui <- page_sidebar(
   sidebar = sidebar(
     width = 400,
     fileInput("upload_csv", "Upload parameters from csv:", accept = ".csv"),
-    numericInput("t_max", "Simulation time steps:", value = 100, min = 10, 
+    numericInput("t_max", "Simulation time steps:", value = 150, min = 10, 
                  max = 500, step = 10),
     
     accordion(
       accordion_panel("initial state",
                       numericInput("init_H", "initial host biomass (H):", 
-                                   value = 10, min = 1, step = 1),
+                                   value = 1, min = 0, step = 1),
                       numericInput("init_P", "initial parasite biomass (P):",
-                                   value = 2, min = 0, step = 1),
+                                   value = 0.5, min = 0, step = 1),
                       numericInput("init_Z", "initial haustoria (Z):", 
                                    value = 0, min = 0, step = 1)
       ),
@@ -67,11 +67,11 @@ ui <- page_sidebar(
       ),
       accordion_panel("host carrying capacity (K_h)",
                       sliderInput("K_h_forb", "forb carrying capacity:", 
-                                  min = 10, max = 200, value = 40, step = 5),
+                                  min = 0, max = 50, value = 40, step = 5),
                       sliderInput("K_h_grass", "grass carrying capacity:", 
-                                  min = 10, max = 200, value = 60, step = 5),
+                                  min = 0, max = 50, value = 50, step = 5),
                       sliderInput("K_h_legume", "legume carrying capacity:", 
-                                  min = 10, max = 200, value = 35, step = 5)
+                                  min = 0, max = 50, value = 30, step = 5)
       ),
       
       accordion_panel("parasite efficiency (alpha)",
@@ -87,11 +87,11 @@ ui <- page_sidebar(
       ),
       accordion_panel("host response/defense/efficiency to parasite attachment (beta)",
                       sliderInput("beta_forb", "forb response (beta):", 
-                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05),
+                            min = 0.01, max = 2.0, value = 1.0, step = 0.05),
                       sliderInput("beta_grass", "grass response (beta):", 
-                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05),
+                            min = 0.01, max = 2.0, value = 1.0, step = 0.05),
                       sliderInput("beta_legume", "legume response (beta):", 
-                                  min = 0.01, max = 2.0, value = 1.0, step = 0.05)
+                            min = 0.01, max = 2.0, value = 1.0, step = 0.05)
       ),
       accordion_panel("competition (delta_hp & delta_ph)",
                       sliderInput("delta_hp_forb", 
@@ -120,10 +120,10 @@ ui <- page_sidebar(
                                   step = 0.01)),
       accordion_panel("parasite & haustoria parameters",
                       sliderInput("r_p", "parasite base growth (r_p):", 
-                                  min = 0.01, max = 1.0, value = 0.25, 
-                                  step = 0.05),
+                                  min = 0, max = 0.2, value = 0.02, 
+                                  step = 0.01),
                       sliderInput("K_p", "parasite carrying capacity (K_p):",
-                                  min = 5, max = 100, value = 20, step = 5),
+                                  min = 0, max = 50, value = 20, step = 5),
                       sliderInput("gamma", "haustoria creation (gamma):", 
                                   min = 0.1, max = 5.0, value = 1.2, 
                                   step = 0.1),
@@ -154,8 +154,8 @@ ui <- page_sidebar(
               div(style = "padding: 15px;",
                   h3("Model Formulation"),
                   withMathJax(
-                    p("$$\\frac{dH}{dt} = \\left(r_H - r_H \\beta_H \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)\\right) H \\left(1 - \\frac{H + \\delta_{HP} P}{K_H}\\right)$$"),
-                    p("$$\\frac{dP}{dt} = r_P P \\left(1 - \\frac{P + \\delta_{PH} H}{K_P}\\right) + \\alpha \\beta_H \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)$$"),
+                    p("$$\\frac{dH}{dt} = \\left(r_H - r_H ( 1 - \\beta_H ) \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)\\right) H \\left(1 - \\frac{H + \\delta_{HP} P}{K_H}\\right)$$"),
+                    p("$$\\frac{dP}{dt} = r_P P \\left(1 - \\frac{P + \\delta_{PH} H}{K_P}\\right) + \\alpha (1 - \\beta_H ) \\left(\\frac{\\frac{Z}{H}}{\\text{c_impact} + \\frac{Z}{H}}\\right)$$"),
                     p("$$\\frac{dZ}{dt} = \\gamma P - \\mu Z$$")
                   ),
                   hr(),
